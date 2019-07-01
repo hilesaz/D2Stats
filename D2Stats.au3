@@ -83,6 +83,12 @@ func Main()
 					GUICtrlSetState($g_idNotifyTest, $GUI_ENABLE)
 					$g_bNotifyCache = True
 				endif
+
+				local $sPlayerName = GetPlayerName()
+				if ($g_sPlayerName <> $sPlayerName) then 
+					OnPlayerChange($sPlayerName)
+					$g_sPlayerName = $sPlayerName
+				endif
 				
 				InjectFunctions()
 				
@@ -330,6 +336,10 @@ func GetPlayerName()
 	local $aiOffsets[3] = [0, 0x14, 0]
 	local $sPlayerName = _MemoryPointerRead($g_hD2Client+0x11BBFC, $g_ahD2Handle, $aiOffsets, "char[16]")
 	return $sPlayerName
+endfunc
+
+func OnPlayerChange($sNewPlayerName)
+	$g_bNotifyCompile = True
 endfunc
 
 func UpdateStatValueMem($iVector)
@@ -760,7 +770,7 @@ func NotifierCompile()
 	local $asLines = StringSplit(_GUI_Option("notify-text"), @LF)
 	local $iLines = $asLines[0]
 	
-	local $sCurrentUsername = ""
+	local $sPlayerNameFilter = ""
 	
 	redim $g_avNotifyCompile[0][0]
 	redim $g_avNotifyCompile[$iLines][$eNotifyFlagsLast]
@@ -771,13 +781,14 @@ func NotifierCompile()
 	for $i = 1 to $iLines
 		local $sLine = StringStripWS(StringRegExpReplace($asLines[$i], "#.*", ""), BitOR($STR_STRIPLEADING, $STR_STRIPTRAILING, $STR_STRIPSPACES))
 		if (StringLeft($sLine, 1) == "@") then
-			$sCurrentUsername = StringMid($sLine, 2)
-		elseif (NotifierCompileLine($sLine, $avRet)) then
-			$avRet[$eNotifyFlagsUsername] = $sCurrentUsername
-			for $j = 0 to $eNotifyFlagsLast - 1
-				$g_avNotifyCompile[$iCount][$j] = $avRet[$j]
-			next
-			$iCount += 1
+			$sPlayerNameFilter = StringMid($sLine, 2)
+		elseif (not $sPlayerNameFilter or $sPlayerNameFilter = $g_sPlayerName) then
+			if (NotifierCompileLine($sLine, $avRet)) then
+				for $j = 0 to $eNotifyFlagsLast - 1
+					$g_avNotifyCompile[$iCount][$j] = $avRet[$j]
+				next
+				$iCount += 1
+			endif
 		endif
 	next
 	
@@ -836,11 +847,6 @@ func NotifierMain()
 	local $bNotify, $sText, $iColor
 	
 	local $bNotifySuperior = _GUI_Option("notify-superior")
-	local $sUsername = GetPlayerName()
-	if (@error) then
-		MsgBox($MB_ICONERROR, "D2Stats", "Failed to get player name")
-		$sUsername = ""
-	endif
 
 	local $tUnitAny = DllStructCreate("dword iUnitType;dword iClass;dword pad1[3];dword pUnitData;dword pad2[52];dword pUnit;")
 	local $tItemData = DllStructCreate("dword iQuality;dword pad1[5];dword iFlags;dword pad2[11];byte iEarLevel;")
@@ -879,8 +885,6 @@ func NotifierMain()
 				$bNotify = False
 				
 				for $j = 0 to UBound($g_avNotifyCompile) - 1
-					local $sFlagsUsername = $g_avNotifyCompile[$j][$eNotifyFlagsUsername]
-					if ($sFlagsUsername and $sUsername <> $sFlagsUsername) then continueloop
 					if (StringRegExp($sName, $g_avNotifyCompile[$j][$eNotifyFlagsMatch])) then
 						$iFlagsTier = $g_avNotifyCompile[$j][$eNotifyFlagsTier]
 						$iFlagsQuality = $g_avNotifyCompile[$j][$eNotifyFlagsQuality]
@@ -1864,7 +1868,7 @@ func DefineGlobals()
 	global $g_avGUI[256][3] = [[0]]			; Text, X, Control [0] Count
 	global $g_avGUIOption[32][3] = [[0]]	; Option, Control, Function [0] Count
 	
-	global enum $eNotifyFlagsTier, $eNotifyFlagsQuality, $eNotifyFlagsMisc, $eNotifyFlagsNoMask, $eNotifyFlagsColour, $eNotifyFlagsSound, $eNotifyFlagsMatch, $eNotifyFlagsUsername, $eNotifyFlagsLast
+	global enum $eNotifyFlagsTier, $eNotifyFlagsQuality, $eNotifyFlagsMisc, $eNotifyFlagsNoMask, $eNotifyFlagsColour, $eNotifyFlagsSound, $eNotifyFlagsMatch, $eNotifyFlagsLast
 	global $g_asNotifyFlags[$eNotifyFlagsLast][32] = [ _
 		[ "0", "1", "2", "3", "4", "sacred" ], _
 		[ "low", "normal", "superior", "magic", "set", "rare", "unique", "craft", "honor" ], _
@@ -1882,10 +1886,12 @@ func DefineGlobals()
 	next
 
 	global $g_avNotifyCache[0][3]					; Name, Tier flag, Last line of name
-	global $g_avNotifyCompile[0][$eNotifyFlagsLast]	; Flags, Regex, Username
+	global $g_avNotifyCompile[0][$eNotifyFlagsLast]	; Flags, Regex
 	global $g_bNotifyCache = True
 	global $g_bNotifyCompile = True
 	global $g_bNotifierChanged = False
+
+	global $g_sPlayerName = ""
 
 	global const $g_iNumStats = 1024
 	global $g_aiStatsCache[2][$g_iNumStats]
